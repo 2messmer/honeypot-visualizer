@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+env/
+.idea/
+.vscode/
+build/
+dist/
+*.egg-info/
+.DS_Store
+storage/
+.flet/
+honeypot_events.db
