@@ -11,7 +11,7 @@ Most honeypot dashboards limit their visualization to plotting raw attacker geo-
 
 ### System Interface Preview
 <p align="center">
-  <img src="docs/screenshots/screenshot5.png" alt="Honeypot Visualizer Full Dashboard Overview" width="100%">
+  <img src="docs/screenshots/screenshot4.png" alt="Honeypot Visualizer Full Dashboard Overview" width="100%">
   <br>
   <em>Figure 1: Full operational dashboard containing the real-time radar, session statistics, local controls, and active event log stream.</em>
 </p>
@@ -48,7 +48,7 @@ Most honeypot dashboards limit their visualization to plotting raw attacker geo-
 ### Prerequisites & Installation
 Clone the repository and prepare your Python environment:
 ```bash
-git clone [https://github.com/](https://github.com/)<your-username>/honeypot-visualizer.git
+git clone [https://github.com/](https://github.com/)2messmer/honeypot-visualizer.git
 cd honeypot-visualizer
 python -m venv .venv
 source .venv/bin/activate      # On Windows: .venv\Scripts\activate
