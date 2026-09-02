@@ -12,4 +12,4 @@ dist/
 .DS_Store
 storage/
 .flet/
-honeypot_events.db
+honeypot_events*.db

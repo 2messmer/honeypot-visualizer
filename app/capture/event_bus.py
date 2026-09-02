@@ -1,17 +1,7 @@
 """
 event_bus.py
--------------
-A minimal thread-safe bridge between the honeypot listener threads
-(which block on socket I/O) and the Flet UI (which must only touch its
-controls from its own asyncio loop).
-
-Producers (the HTTP/SSH honeypot threads, or the attack simulator) call
-`bus.publish(event)` from any thread. The UI runs a single asyncio
-consumer loop (see main.py) that drains the queue with
-`bus.drain()` and applies the events to its controls — the only code
-that ever touches Flet controls runs on the UI's own loop.
+Thread-safe bridge between honeypot listener threads and the Flet UI.
 """
-
 from __future__ import annotations
 from dataclasses import dataclass, field
 import queue
@@ -23,7 +13,7 @@ _id_counter = itertools.count(1)
 
 @dataclass
 class HoneypotEvent:
-    service: str                 # "http" or "ssh"
+    service: str
     ip: str
     path: str = ""
     method: str = ""
@@ -33,6 +23,7 @@ class HoneypotEvent:
     user_agent: str = ""
     timestamp: float = field(default_factory=time.time)
     event_id: int = field(default_factory=lambda: next(_id_counter))
+    technique_tags: set = field(default_factory=set)
 
 
 class EventBus:
@@ -43,7 +34,6 @@ class EventBus:
         self._queue.put_nowait(event)
 
     def drain(self, max_items: int = 200) -> list[HoneypotEvent]:
-        """Non-blocking: returns and removes up to `max_items` pending events."""
         items = []
         for _ in range(max_items):
             try:
@@ -53,5 +43,4 @@ class EventBus:
         return items
 
 
-# One shared bus for the whole process (single-user desktop app).
 bus = EventBus()

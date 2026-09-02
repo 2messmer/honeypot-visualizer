@@ -1,106 +1,86 @@
-# Honeypot Visualizer
+# Honeypot Visualizer v2
 
-**Decoy SSH/HTTP services, scored by a custom Behavioral Danger Index, displayed on a live threat-proximity radar.**
+**BDI v2 | Threat DNA Fingerprinting | Subnet Cluster Detection | Attack Timeline**
 
-Most honeypot dashboards just plot attacker IPs on a literal world map and
-count hits. This one does two things differently:
+> A major update to [Honeypot Visualizer v1](https://github.com/2messmer/honeypot-visualizer).
+> Every new feature in v2 was designed around a specific limitation of v1.
 
-1. **A custom scoring algorithm** — the *Behavioral Danger Index (BDI)* —
-   combines four independent signals (request frequency, path/service
-   diversity, known-attack-signature matching, and credential-stuffing
-   behavior) into a single 0-100 score per source IP. There's no
-   "official" formula for this; it's an original heuristic built for
-   this project (see `app/intel/scoring.py`).
-2. **A threat-proximity radar, not a map** — distance from center encodes
-   *danger* (BDI), not geography. Two attackers on opposite sides of the
-   planet with the same score sit on the same ring. Bearing (angle)
-   still comes from a real signal (a deterministic hash of the IP, or
-   optionally live geolocation), so the display isn't arbitrary — it's
-   just reorganized around what actually matters operationally.
+## What is new in v2
 
-## What's inside
-
-| Component | What it does |
+| v1 limitation | v2 answer |
 |---|---|
-| **HTTP honeypot** | A decoy web server that answers common bait paths (`/wp-login.php`, `/.env`, `/phpmyadmin/`, ...) and logs every request. Never executes anything a visitor sends. |
-| **SSH honeypot** | A decoy SSH server (via `paramiko`) that completes the handshake, logs every username/password or public-key attempt, and **always rejects authentication** — no real access is ever granted, by construction. |
-| **Behavioral Danger Index** | Custom 0-100 threat score per IP, recomputed live as new events arrive. |
-| **Threat Proximity Radar** | A military-radar-style live visualization: rotating sweep, danger-tier rings, pulsing blips. |
-| **Demo traffic simulator** | Generates realistic synthetic events so you can showcase/screenshot the dashboard without exposing a real port to the internet. |
+| Per-IP BDI with 4 sub-scores misses coordinated multi-IP attacks | **Subnet Cluster Engine** groups IPs by /24 and declares a cluster when 3+ IPs from the same subnet are active within 10 minutes |
+| Every radar blip looks the same (only tier color varies) | **Threat DNA Fingerprinting** gives each IP a unique 32-cell color barcode from 8 behavioral dimensions |
+| No way to see attack escalation (scan then exploit) | **Attack Timeline** canvas shows IP rows vs. time, with technique-colored dots revealing kill-chain progression |
+| BDI could not distinguish bots from humans | **Automation sub-score** uses coefficient-of-variation of inter-arrival times |
+| Log rows showed raw text only | **Technique badge system** tags each HTTP event with SQL_INJECTION, PATH_TRAVERSAL, RCE_ATTEMPT, etc. |
+| BDI ignored repeat offenders from past sessions | **Persistence sub-score** reads historical event count from SQLite |
 
-## ⚠️ Safety first — read before running for real
+## Threat DNA Fingerprinting
 
-- Only run the real honeypot listeners on infrastructure **you own or are
-  explicitly authorized to monitor**.
-- **Do not** forward these ports from your home router to try to attract
-  real internet traffic — that exposes your home network. Run this on an
-  isolated VM or a cheap cloud instance if you want real-world traffic.
-- The SSH honeypot **never grants real authentication**, by design —
-  verified in `tests/test_honeypot_core.py`.
-- If you just want to see the dashboard working, use the built-in
-  **"Start demo traffic"** button — no real network exposure needed.
+The most original addition: instead of a uniform dot on the radar, every attacker IP gets a **32-cell behavioral barcode** derived from 8 independent dimensions of its attack behavior.
+
+8 dimensions x 4 hex chars each = 32-char DNA string. Rendered as 32 colored rectangles in the DNA Gallery panel, where brightness encodes the value and hue encodes the dimension (green=frequency, red=credentials, blue=path diversity...).
+
+Two IPs from the same botnet using the same credential list, path strategy, and timing pattern produce visually similar DNA strips. A human and a bot are visually distinct at a glance, even before BDI is computed.
+
+Inspired by behavioral hashing in malware analysis (imphash, ssdeep), applied here to live honeypot telemetry.
+
+## BDI v2 formula
+
+```
+BDI = 100 * (
+    0.20 * frequency_score    +   # request rate (saturating curve)
+    0.20 * diversity_score    +   # paths + services probed
+    0.25 * signature_score    +   # known-attack-pattern density
+    0.18 * credential_score   +   # credential-stuffing behavior
+    0.10 * automation_score   +   # CoV of inter-arrival times (NEW)
+    0.07 * persistence_score      # historical DB event count (NEW)
+)
+```
 
 ## Getting started
 
 ```bash
-git clone https://github.com/<your-username>/honeypot-visualizer.git
+git clone https://github.com/2messmer/honeypot-visualizer.git
 cd honeypot-visualizer
-python -m venv .venv
-source .venv/bin/activate      # Windows: .venv\Scripts\activate
+python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
+python -m pytest tests/ -v   # 9 tests
 python main.py
 ```
 
-Then, in the app:
-1. Click **"Start / Stop demo traffic"** to see the radar come alive safely, or
-2. Set a port and click **Start / Stop** next to HTTP / SSH to run the real decoy services locally, then attack your own machine from another terminal to test it (see below).
+Click **Demo traffic** to see the radar, DNA gallery, and timeline populate safely without exposing real ports.
 
 ## Project structure
 
 ```
 honeypot-visualizer/
 ├── main.py
-├── requirements.txt
 ├── app/
 │   ├── theme.py
-│   ├── capture/
-│   │   ├── http_honeypot.py     # decoy HTTP server
-│   │   ├── ssh_honeypot.py      # decoy SSH server (paramiko)
-│   │   ├── event_bus.py         # thread-safe queue -> UI bridge
-│   │   └── event_store.py       # SQLite persistence
+│   ├── capture/                    (event_bus, event_store, http/ssh honeypots)
 │   ├── intel/
-│   │   ├── signatures.py        # known attack-pattern reference data
-│   │   ├── scoring.py           # the Behavioral Danger Index algorithm
-│   │   └── geolocate.py         # IP -> radar bearing
+│   │   ├── scoring.py              BDI v2, 6 sub-scores
+│   │   ├── cluster_engine.py       NEW: subnet cluster detection
+│   │   ├── dna_engine.py           NEW: Threat DNA fingerprinting
+│   │   ├── signatures.py           updated: payload technique classification
+│   │   └── geolocate.py
 │   ├── simulate/
-│   │   └── attack_simulator.py  # safe synthetic demo traffic
+│   │   └── attack_simulator.py     updated: realistic clusters + technique tags
 │   └── views/
-│       ├── radar_canvas.py      # radar drawing math
-│       └── dashboard_view.py    # the single live dashboard screen
+│       ├── radar_canvas.py         updated: cluster rings, DNA blips, pulses
+│       ├── timeline_view.py        NEW: attack timeline canvas
+│       ├── dna_panel_view.py       NEW: Threat DNA gallery canvas
+│       └── dashboard_view.py       major update
 └── tests/
-    └── test_honeypot_core.py    # incl. full socket-level end-to-end tests
+    └── test_v2.py                  9 tests including real socket-level tests
 ```
 
-## Testing it against yourself (optional, local only)
+## Safety
 
-```bash
-python main.py
-# in the app: set HTTP port to 8080 and click Start
-
-# in another terminal:
-curl http://127.0.0.1:8080/wp-login.php
-curl http://127.0.0.1:8080/.env
-
-# for SSH (set SSH port to 2222 and click Start):
-ssh root@127.0.0.1 -p 2222   # will always be rejected — that's the point
-```
-
-## Running the tests
-
-```bash
-python -m pytest tests/ -v
-```
+Only run the real honeypot listeners on infrastructure you own or are explicitly authorized to monitor. The SSH honeypot **never grants real authentication** (verified by test). Use the built-in simulator for demos.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT

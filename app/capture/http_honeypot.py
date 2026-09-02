@@ -1,29 +1,15 @@
-"""
-http_honeypot.py
-------------------
-A minimal decoy HTTP server. It answers every request with a plausible
-(but generic, non-branded) placeholder page and logs full request
-details as a HoneypotEvent — method, path, query, headers, User-Agent,
-and body for POST/PUT.
-
-This is a DEFENSIVE / RESEARCH tool: it never executes anything an
-attacker sends, never grants real access to anything, and never serves
-real credentials or real system information. Only run it on a machine
-and network you own or are explicitly authorized to monitor.
-"""
-
+"""http_honeypot.py — decoy HTTP server. Identical to v1."""
 from __future__ import annotations
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from app.capture.event_bus import HoneypotEvent, bus
-from app.intel import signatures
+from app.intel.signatures import classify_techniques
 
-BANNER_SERVER_HEADER = "nginx/1.18.0 (Ubuntu)"  # generic, widely-deployed banner — not a real fingerprint of this app
+BANNER_SERVER_HEADER = "nginx/1.18.0 (Ubuntu)"
 
 
 def _fake_body_for(path: str) -> tuple[int, str, str]:
-    """Returns (status_code, content_type, body) — deliberately generic/harmless."""
     lower = path.lower()
     if ".env" in lower:
         return 404, "text/plain", "Not Found"
@@ -36,10 +22,10 @@ def _fake_body_for(path: str) -> tuple[int, str, str]:
             "<button type='submit'>Sign in</button></form></body></html>"
         )
     if "phpmyadmin" in lower:
-        return 200, "text/html", "<html><body><h3>phpMyAdmin</h3><p>Please log in.</p></body></html>"
+        return 200, "text/html", "<html><body><h3>phpMyAdmin</h3></body></html>"
     if "actuator" in lower:
         return 200, "application/json", '{"status":"UP"}'
-    if path == "/" or path == "":
+    if path in ("/", ""):
         return 200, "text/html", "<html><body><h1>It works!</h1></body></html>"
     return 404, "text/plain", "Not Found"
 
@@ -49,7 +35,7 @@ class _Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
     def log_message(self, fmt, *args):
-        pass  # silence default stderr logging; we log via the event bus instead
+        pass
 
     def _handle(self, method: str):
         length = int(self.headers.get("Content-Length", 0) or 0)
@@ -58,14 +44,13 @@ class _Handler(BaseHTTPRequestHandler):
         path = self.path
         user_agent = self.headers.get("User-Agent", "")
         raw_text = f"{method} {path} {body_text}".strip()
+        tags = classify_techniques(raw_text)
 
         bus.publish(HoneypotEvent(
-            service="http",
-            ip=self.client_address[0],
-            path=path.split("?")[0],
-            method=method,
-            raw_text=raw_text,
-            user_agent=user_agent,
+            service="http", ip=self.client_address[0],
+            path=path.split("?")[0], method=method,
+            raw_text=raw_text, user_agent=user_agent,
+            technique_tags=tags,
         ))
 
         status, content_type, body = _fake_body_for(path)
@@ -76,17 +61,10 @@ class _Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(payload)
 
-    def do_GET(self):
-        self._handle("GET")
-
-    def do_POST(self):
-        self._handle("POST")
-
-    def do_PUT(self):
-        self._handle("PUT")
-
-    def do_HEAD(self):
-        self._handle("HEAD")
+    def do_GET(self):  self._handle("GET")
+    def do_POST(self): self._handle("POST")
+    def do_PUT(self):  self._handle("PUT")
+    def do_HEAD(self): self._handle("HEAD")
 
 
 class HttpHoneypot:
@@ -97,7 +75,7 @@ class HttpHoneypot:
         self._thread: threading.Thread | None = None
 
     @property
-    def is_running(self) -> bool:
+    def is_running(self):
         return self._thread is not None and self._thread.is_alive()
 
     def start(self):
@@ -108,7 +86,7 @@ class HttpHoneypot:
         self._thread.start()
 
     def stop(self):
-        if self._server is not None:
+        if self._server:
             self._server.shutdown()
             self._server.server_close()
         self._server = None

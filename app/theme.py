@@ -1,5 +1,4 @@
-"""theme.py — dark "radar console" visual identity."""
-
+"""theme.py — dark "radar console" visual identity. v2 adds cluster + DNA colors."""
 import flet as ft
 
 BG_DARK = "#050B08"
@@ -20,9 +19,23 @@ TIER_COLORS = {
     "CRITICAL": RED_CRITICAL,
 }
 
-HEADLINE_STYLE = ft.TextStyle(size=26, weight=ft.FontWeight.W_800, color=TEXT_PRIMARY, font_family="Consolas")
+# Cluster threat ring colors
+CLUSTER_RING_COLOR = "#00CFFF"
+CLUSTER_FILL_COLOR = "#00CFFF"
+
+HEADLINE_STYLE = ft.TextStyle(
+    size=26, weight=ft.FontWeight.W_800,
+    color=TEXT_PRIMARY, font_family="Consolas"
+)
 SUBHEAD_STYLE = ft.TextStyle(size=13, color=TEXT_MUTED)
-MONO_LABEL_STYLE = ft.TextStyle(size=13, weight=ft.FontWeight.W_600, color=PHOSPHOR_GREEN, font_family="Consolas")
+MONO_LABEL_STYLE = ft.TextStyle(
+    size=13, weight=ft.FontWeight.W_600,
+    color=PHOSPHOR_GREEN, font_family="Consolas"
+)
+MONO_SMALL_STYLE = ft.TextStyle(
+    size=11, weight=ft.FontWeight.W_400,
+    color=TEXT_MUTED, font_family="Consolas"
+)
 
 
 def app_background_gradient() -> ft.LinearGradient:
@@ -35,7 +48,8 @@ def app_background_gradient() -> ft.LinearGradient:
 def panel(content: ft.Control, *, padding: int = 18, expand=None) -> ft.Container:
     return ft.Container(
         content=content, padding=padding, bgcolor=BG_PANEL,
-        border=ft.Border.all(1, BORDER_SOFT), border_radius=ft.border_radius.all(12), expand=expand,
+        border=ft.Border.all(1, BORDER_SOFT),
+        border_radius=ft.border_radius.all(12), expand=expand,
     )
 
 

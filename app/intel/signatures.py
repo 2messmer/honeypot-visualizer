@@ -1,35 +1,25 @@
 """
-signatures.py
---------------
-Reference lists used to recognize common attack patterns in HTTP paths,
-query strings, and request bodies hitting the honeypot. These are widely
-published, defensive fingerprints (the same category of data used by
-WAFs, IDS rulesets, and honeypots like Cowrie/Dionaea) — recognizing a
-pattern is not the same as exploiting one.
+signatures.py  (v2)
+--------------------
+Extends v1 with PAYLOAD TECHNIQUE CLASSIFICATION: for each HTTP request,
+`classify_techniques(raw_text)` returns a set of short attack-technique
+tags (SQL_INJECTION, PATH_TRAVERSAL, etc.) that the dashboard displays
+as colored badges on log rows. This makes the log immediately actionable
+instead of just showing raw strings.
 """
 
-# Paths commonly probed by mass-scanning bots looking for exposed secrets,
-# admin panels, or vulnerable software versions.
+from __future__ import annotations
+import re
+
+ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+
 BAIT_PATHS = [
-    "/",
-    "/admin",
-    "/admin/login",
-    "/wp-login.php",
-    "/wp-admin/",
-    "/.env",
-    "/.git/config",
-    "/config.php",
-    "/phpmyadmin/",
-    "/api/v1/users",
-    "/console/",
-    "/actuator/health",
-    "/.aws/credentials",
-    "/server-status",
-    "/xmlrpc.php",
+    "/", "/admin", "/admin/login", "/wp-login.php", "/wp-admin/",
+    "/.env", "/.git/config", "/config.php", "/phpmyadmin/",
+    "/api/v1/users", "/console/", "/actuator/health",
+    "/.aws/credentials", "/server-status", "/xmlrpc.php",
 ]
 
-# Substrings that, if present in a path/query/body, suggest a scripted
-# exploitation attempt rather than a benign request.
 SUSPICIOUS_SUBSTRINGS = [
     "../", "..%2f", "union select", "select * from", "' or '1'='1",
     "<script>", "onerror=", "etc/passwd", "cmd.exe", "/bin/sh",
@@ -37,9 +27,6 @@ SUSPICIOUS_SUBSTRINGS = [
     "..\\", "%00", "sleep(5)", "benchmark(",
 ]
 
-# Usernames/passwords so commonly tried by SSH credential-stuffing bots
-# that trying them is itself a strong signal (independent of whether they
-# "work" — our honeypot never grants real access).
 COMMON_CREDENTIAL_PAIRS = {
     ("root", "root"), ("root", "123456"), ("root", "toor"),
     ("admin", "admin"), ("admin", "password"), ("user", "user"),
@@ -47,16 +34,48 @@ COMMON_CREDENTIAL_PAIRS = {
     ("oracle", "oracle"), ("postgres", "postgres"),
 }
 
+# Technique classification rules:  (tag, list-of-pattern-regexes)
+_TECHNIQUE_RULES: list[tuple[str, list[str]]] = [
+    ("SQL_INJECTION",   [r"union\s+select", r"'\s*or\s*'1'\s*=\s*'1", r"sleep\s*\(", r"benchmark\s*\("]),
+    ("PATH_TRAVERSAL",  [r"\.\./", r"\.\.%2f", r"etc/passwd", r"%00"]),
+    ("XSS",             [r"<script", r"onerror\s*=", r"javascript:"]),
+    ("CMD_INJECTION",   [r"/bin/sh", r"cmd\.exe", r";\s*ls\s", r";\s*id\s", r";\s*whoami"]),
+    ("FILE_DISCLOSURE", [r"\.env", r"\.git/", r"\.aws/", r"config\.php", r"wp-config\.php"]),
+    ("RCE_ATTEMPT",     [r"base64_decode", r"eval\s*\(", r"phpinfo\s*\(", r"wget\s+http", r"curl\s+http"]),
+    ("SCANNER",         [r"nmap", r"masscan", r"zgrab", r"nuclei", r"nikto", r"sqlmap"]),
+]
+
+TECHNIQUE_COLORS = {
+    "SQL_INJECTION":   "#FF4136",
+    "PATH_TRAVERSAL":  "#FF851B",
+    "XSS":             "#FFDC00",
+    "CMD_INJECTION":   "#FF4136",
+    "FILE_DISCLOSURE": "#B10DC9",
+    "RCE_ATTEMPT":     "#FF4136",
+    "SCANNER":         "#7FDBFF",
+    "CRED_STUFFING":   "#01FF70",
+}
+
+
+def classify_techniques(raw_text: str) -> set[str]:
+    """Returns a set of attack technique tags present in raw_text."""
+    if not raw_text:
+        return set()
+    lowered = raw_text.lower()
+    tags = set()
+    for tag, patterns in _TECHNIQUE_RULES:
+        for pat in patterns:
+            if re.search(pat, lowered):
+                tags.add(tag)
+                break
+    return tags
+
 
 def matches_bait_path(path: str) -> bool:
     return path.rstrip("/") in {p.rstrip("/") for p in BAIT_PATHS} or path == "/"
 
 
 def suspicious_score(text: str) -> float:
-    """
-    Returns a 0.0-1.0 score based on how many known-suspicious substrings
-    appear in `text` (path + query + body combined), capped at 1.0.
-    """
     if not text:
         return 0.0
     lowered = text.lower()
